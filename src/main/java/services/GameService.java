@@ -8,8 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import models.*;
 import websocket.GameWebSocket;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Service class that handles the core game logic, such as moving snakes,
@@ -37,6 +37,8 @@ public class GameService {
         }
         this.gameWebSocket = gameWebSocket;
         this.gameState = new GameState( 40, 40 );
+        // Using ConcurrentHashMap for gameState Snakes to avoid concurrent modification
+        this.gameState.setSnakes( new ConcurrentHashMap<>( ) );
     }
 
     /**
@@ -95,6 +97,7 @@ public class GameService {
         Pointer head = snake.getHead( );
         boolean collisionOccurred = false;
 
+        // Check for wall collisions
         if ( head.getX( ) < 0 || head.getX( ) >= gameState.getGridWidth( ) || head.getY( ) < 0 || head.getY( ) >= gameState.getGridHeight( ) ) {
             snake.setAlive( false );
             gameState.removeSnake( playerId );
@@ -102,6 +105,7 @@ public class GameService {
             log.warn( "Player {}'s snake hit the wall and is removed.", playerId );
         }
 
+        // Check for self-collisions
         if ( !collisionOccurred ) {
             for ( int i = 1; i < snake.getBody( ).size( ); i++ ) {
                 Pointer bodyPart = snake.getBody( ).get( i );
@@ -115,34 +119,40 @@ public class GameService {
             }
         }
 
-        for ( Map.Entry< String, Snake > entry : gameState.getSnakes( ).entrySet( ) ) {
-            if ( !entry.getKey( ).equals( playerId ) ) {
-                for ( Pointer segment : entry.getValue( ).getBody( ) ) {
-                    if ( head.equals( segment ) ) {
-                        snake.setAlive( false );
-                        gameState.removeSnake( playerId );
-                        collisionOccurred = true;
-                        log.warn( "Player {}'s snake collided with another snake and is removed.", playerId );
-                        break;
+        // Check for collisions with other snakes (iterate over a ConcurrentHashMap)
+        if ( !collisionOccurred ) {
+            for ( Map.Entry< String, Snake > entry : gameState.getSnakes( ).entrySet( ) ) {
+                if ( !entry.getKey( ).equals( playerId ) ) {
+                    for ( Pointer segment : entry.getValue( ).getBody( ) ) {
+                        if ( head.equals( segment ) ) {
+                            snake.setAlive( false );
+                            gameState.removeSnake( playerId );
+                            collisionOccurred = true;
+                            log.warn( "Player {}'s snake collided with another snake and is removed.", playerId );
+                            break;
+                        }
                     }
                 }
+                if ( collisionOccurred ) break;
             }
         }
 
+        // Handle collision event
         if ( collisionOccurred ) {
-            Map< String, Object > collisionResponse = new HashMap<>( );
+            Map< String, Object > collisionResponse = new ConcurrentHashMap<>( );
             collisionResponse.put( "collision", true );
             collisionResponse.put( "playerId", playerId );
             gameWebSocket.broadcastGameState( );
             broadcastMessageToClient( playerId, collisionResponse );
         }
 
+        // Check if snake ate food
         if ( head.equals( gameState.getFood( ).getPosition( ) ) ) {
             snake.grow( );
             gameState.generateNewFood( );
             log.info( "Player {}'s snake ate the food and grew.", playerId );
 
-            Map< String, Object > foodEatenResponse = new HashMap<>( );
+            Map< String, Object > foodEatenResponse = new ConcurrentHashMap<>( );
             foodEatenResponse.put( "foodEaten", true );
             foodEatenResponse.put( "playerId", playerId );
             broadcastMessageToClient( playerId, foodEatenResponse );
