@@ -11,7 +11,7 @@ understanding how to reset and refresh the game in different tabs.
 ### Prerequisites
 
 - IntelliJ or IDE from your preference
-- **Java 11+**
+- **Java 22**
 - **Maven 3.8+**
 - A modern web browser (for testing WebSockets across tabs).
 
